@@ -1,0 +1,114 @@
+# @zakkster/lite-auth
+
+> Session-as-a-signal authentication for the lite-* ecosystem. The entire auth
+> state is one reactive value (a private signal holding a SessionRecord or
+> undefined); session, isAuthenticated, token, expiresAt, status and error are
+> computed projections of it. Cross-tab logout/login over BroadcastChannel,
+> durable persistence, optional leader-only token refresh. Zero runtime deps.
+
+## Install
+
+npm install @zakkster/lite-auth @zakkster/lite-signal @zakkster/lite-persist
+Optional (only with crossTab:true): npm install @zakkster/lite-channel
+
+Peers: @zakkster/lite-signal (required), @zakkster/lite-persist (required),
+@zakkster/lite-channel (optional, lazy-loaded when crossTab:true).
+ESM only. Single file: Auth.js. Types: Auth.d.ts.
+
+## Exports
+
+- createAuth(config) -> Auth
+- fetchAdapter(options) -> AuthAdapter
+- decodeJwtExp(token: string) -> number | undefined
+- class AuthError extends Error { code, cause? }
+
+## createAuth(config)
+
+config:
+- adapter: AuthAdapter (REQUIRED). { signIn(creds, signal)->Promise<record>,
+  refresh?(record, signal)->Promise<record>, signOut?(record)->Promise<void> }
+- storage: "localStorage" (default) | "sessionStorage" | "memory" | StorageLike
+- storageKey: string (default "lite-auth.session.v1"); also the default channel key
+- channelName: string (default = storageKey)
+- crossTab: boolean (default false); requires @zakkster/lite-channel
+- refresh: { enabled: boolean, threshold?: number /* seconds, default 60 */ }
+- channelOptions: object forwarded to lite-channel createTabSync (persist forced off)
+- registry: custom lite-signal registry { signal, computed, batch }
+  (advanced; pairs best with storage:"memory" because lite-persist uses the global graph)
+- onSignIn(user) / onSignOut() / onSessionExpire() / onTokenRefresh(record): hooks
+- onError(error: AuthError): ambient (non-thrown) failures
+
+returns Auth:
+- session: ReadonlySignal<User | null>
+- isAuthenticated: ReadonlySignal<boolean>
+- token: ReadonlySignal<string | null>
+- expiresAt: ReadonlySignal<number | null>   // epoch ms
+- status: ReadonlySignal<"idle" | "authenticating" | "refreshing">
+- error: ReadonlySignal<AuthError | null>
+- ready: Promise<void>   // resolves after boot hydration + channel attach + boot refresh
+- signIn(credentials) -> Promise<User>        // throws AuthError on failure
+- signOut() -> Promise<void>                   // optimistic, never throws
+- refresh() -> Promise<void>                   // throws AuthError on failure
+- onSignIn/onSignOut/onSessionExpire/onTokenRefresh(fn) -> () => void  // idempotent disposer
+- dispose() -> void   // tears down timers/subscriptions/channel; leaves storage intact
+
+A ReadonlySignal<T> is callable (tracked read), has .peek() (untracked) and
+.subscribe(fn) -> dispose (fires immediately, then on change).
+
+## SessionRecord
+
+{ user: any, accessToken: string, refreshToken?: string, expiresAt?: number /* epoch ms */ }
+The user value is opaque to lite-auth.
+
+## AuthError.code values
+
+invalid_credentials | network | refresh_failed | no_refresh_token | expired |
+storage | aborted | misconfigured
+
+## Behaviour
+
+- Boot hydration is synchronous: a stored session is available before ready resolves.
+- A restored session is the baseline; onSignIn does NOT fire on restore.
+- Empty state is `undefined` internally so lite-persist removes the key on sign-out;
+  projections still surface null.
+- Persistence: lite-persist with syncTabs:false (lite-channel owns cross-tab),
+  debounce:0, flushOnDispose:true. Corrupt stored value -> discarded + error("storage").
+  Write/quota failure -> swallowed; session stays in memory.
+- Cross-tab: lite-channel with persist:false. A serialized STRING is synced (not the
+  object) so value-dedupe terminates the echo. signIn/signOut/refresh propagate.
+- Refresh: timer fires threshold seconds before expiresAt. Under crossTab, only the
+  leader tab (lite-channel isLeader) refreshes; followers receive the rotated record.
+  JWT exp is used when the adapter omits expiresAt.
+- Concurrency: last-call-wins. A superseded signIn/refresh rejects with code "aborted".
+  signOut aborts an in-flight refresh and is never resurrected by it.
+
+## fetchAdapter(options)
+
+options: { signInUrl, refreshUrl?, signOutUrl?, headers?, parseSession?(json), fetch? }
+POSTs JSON; reads { user, accessToken, refreshToken?, expiresAt? }; derives expiresAt
+from the access token's JWT exp claim when absent.
+
+## Minimal example
+
+import { createAuth, fetchAdapter } from "@zakkster/lite-auth";
+const auth = createAuth({
+  adapter: fetchAdapter({ signInUrl: "/api/login", refreshUrl: "/api/refresh" }),
+  crossTab: true,
+  refresh: { enabled: true, threshold: 60 },
+});
+await auth.ready;
+await auth.signIn({ username, password });
+auth.isAuthenticated.subscribe(on => render(on));
+await auth.signOut(); // logs out every tab
+
+## Custom adapter
+
+const adapter = {
+  async signIn(credentials, signal) { /* return SessionRecord */ },
+  async refresh(record, signal) { /* return SessionRecord */ },   // optional
+  async signOut(record) { /* revoke server-side */ },             // optional
+};
+
+## License
+
+MIT (c) Zahary Shinikchiev.

@@ -1,0 +1,81 @@
+{
+  "name": "@zakkster/lite-auth",
+  "version": "1.0.0",
+  "description": "Session-as-a-signal authentication for the lite-* ecosystem: a reactive User|null with cross-tab logout, pluggable backends, and leader-only token refresh. Zero runtime dependencies.",
+  "type": "module",
+  "main": "./Auth.js",
+  "types": "./Auth.d.ts",
+  "exports": {
+    ".": {
+      "types": "./Auth.d.ts",
+      "node": "./Auth.js",
+      "import": "./Auth.js",
+      "default": "./Auth.js"
+    }
+  },
+  "files": [
+    "Auth.js",
+    "Auth.d.ts",
+    "llms.txt",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "test": "node --test --test-reporter=spec test/*.test.mjs",
+    "test:gc": "node --expose-gc --test --test-reporter=spec test/*.test.mjs",
+    "test:coverage": "c8 node --test --test-reporter=spec test/*.test.mjs",
+    "bench": "node bench/bench.mjs",
+    "demo:build": "esbuild Auth.js --bundle --format=esm --outfile=demo/lite-auth.bundle.js",
+    "verify": "npm test && npm run bench"
+  },
+  "keywords": [
+    "auth",
+    "authentication",
+    "session",
+    "signal",
+    "signals",
+    "reactive",
+    "cross-tab",
+    "broadcastchannel",
+    "jwt",
+    "token-refresh",
+    "lite",
+    "zero-dependency"
+  ],
+  "author": "Zahary Shinikchiev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeshoVurtoleta/lite-auth.git"
+  },
+  "homepage": "https://github.com/PeshoVurtoleta/lite-auth#readme",
+  "bugs": {
+    "url": "https://github.com/PeshoVurtoleta/lite-auth/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/PeshoVurtoleta"
+  },
+  "peerDependencies": {
+    "@zakkster/lite-signal": "^1.1.2",
+    "@zakkster/lite-persist": "^1.0.0",
+    "@zakkster/lite-channel": "^1.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@zakkster/lite-channel": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@zakkster/lite-channel": "^1.0.1",
+    "@zakkster/lite-persist": "^1.0.0",
+    "@zakkster/lite-signal": "^1.1.4",
+    "c8": "^11.0.0",
+    "esbuild": "^0.28.0"
+  }
+}

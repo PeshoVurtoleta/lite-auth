@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>lite-auth · session monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap"
+          rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-0: #07090d;
+            --bg-1: #0d1117;
+            --bg-2: #131922;
+            --bg-3: #1a2230;
+            --line: rgba(255, 255, 255, 0.06);
+            --line-strong: rgba(255, 255, 255, 0.14);
+            --text: #d8d6d2;
+            --text-dim: #8b8d94;
+            --text-faint: #555960;
+            --green: #5fe39f;
+            --green-dim: #2b7a52;
+            --cyan: #7dd3fc;
+            --amber: #f5b942;
+            --magenta: #e879a8;
+            --red: #f87171;
+            --glow-green: 0 0 12px rgba(95, 227, 159, 0.6), 0 0 30px rgba(95, 227, 159, 0.25);
+            --glow-cyan: 0 0 12px rgba(125, 211, 252, 0.5);
+            --glow-amber: 0 0 12px rgba(245, 185, 66, 0.6), 0 0 30px rgba(245, 185, 66, 0.2);
+            --glow-red: 0 0 12px rgba(248, 113, 113, 0.55);
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text);
+            background: var(--bg-0);
+            overflow: hidden;
+            font-feature-settings: "ss01", "ss02", "cv02", "cv11", "tnum";
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: radial-gradient(circle at 18% 0%, rgba(95, 227, 159, 0.05) 0%, transparent 42%),
+            radial-gradient(circle at 82% 100%, rgba(125, 211, 252, 0.035) 0%, transparent 52%);
+            z-index: 0;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255, 255, 255, 0.012) 2px, rgba(255, 255, 255, 0.012) 3px);
+            z-index: 1;
+        }
+
+        #app {
+            position: relative;
+            z-index: 2;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            transition: opacity .5s ease;
+        }
+
+        #app.booted {
+            opacity: 1;
+        }
+
+        /* ── Header ── */
+        header.top {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--line);
+            background: linear-gradient(to bottom, var(--bg-1), var(--bg-0));
+        }
+
+        .brand {
+            display: flex;
+            align-items: baseline;
+            gap: 11px;
+            font-family: 'Space Mono', monospace;
+        }
+
+        .brand .mark {
+            color: var(--green);
+            font-weight: 700;
+            font-size: 16px;
+            letter-spacing: -0.02em;
+            text-shadow: var(--glow-green);
+        }
+
+        .brand .pkg {
+            color: var(--text);
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        .brand .ver {
+            color: var(--text-faint);
+            font-size: 11px;
+        }
+
+        .hdr-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chip {
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 4px 9px;
+            border: 1px solid var(--line-strong);
+            border-radius: 2px;
+            color: var(--text-dim);
+            background: var(--bg-2);
+            white-space: nowrap;
+        }
+
+        .chip b {
+            color: var(--text);
+            font-weight: 700;
+        }
+
+        .chip.leader-on {
+            color: var(--bg-0);
+            background: var(--amber);
+            border-color: var(--amber);
+            box-shadow: var(--glow-amber);
+        }
+
+        .chip.leader-on b {
+            color: var(--bg-0);
+        }
+
+        .chip.xtab-on {
+            color: var(--cyan);
+            border-color: var(--green-dim);
+        }
+
+        .dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: var(--glow-green);
+            margin-right: 6px;
+            animation: pulse 2s infinite ease-in-out;
+            vertical-align: 1px;
+        }
+
+        .dot.off {
+            background: var(--text-faint);
+            box-shadow: none;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.35;
+            }
+        }
+
+        main {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+        }
+
+        /* ── Stage ── */
+        .stage {
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+            background: radial-gradient(ellipse at 50% 38%, var(--bg-1), var(--bg-0) 70%);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .stage-overlay {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .stage-overlay.tl {
+            top: 18px;
+            left: 22px;
+        }
+
+        .stage-overlay.tr {
+            top: 18px;
+            right: 22px;
+            text-align: right;
+        }
+
+        .stage-overlay.bl {
+            bottom: 20px;
+            left: 22px;
+            right: 22px;
+        }
+
+        .lamp-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .lamp {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--text-faint);
+            border: 1px solid rgba(0, 0, 0, .4);
+            transition: all .3s;
+        }
+
+        .lamp.on {
+            background: var(--green);
+            box-shadow: var(--glow-green);
+        }
+
+        .lamp.busy {
+            background: var(--amber);
+            box-shadow: var(--glow-amber);
+            animation: pulse 1s infinite;
+        }
+
+        .lamp.err {
+            background: var(--red);
+            box-shadow: var(--glow-red);
+        }
+
+        .state-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .state-label.on {
+            color: var(--green);
+            text-shadow: var(--glow-green);
+        }
+
+        .state-label.off {
+            color: var(--text-faint);
+        }
+
+        .state-label.busy {
+            color: var(--amber);
+            text-shadow: var(--glow-amber);
+        }
+
+        .state-sub {
+            color: var(--text-dim);
+            font-size: 11px;
+            margin-top: 4px;
+            letter-spacing: 0.04em;
+        }
+
+        .readout {
+            margin-top: 2px;
+        }
+
+        .readout .k {
+            font-size: 9px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-faint);
+        }
+
+        .readout .val {
+            font-size: 13px;
+            color: var(--text);
+        }
+
+        .readout .val.user {
+            color: var(--cyan);
+        }
+
+        .token-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .token-val {
+            color: var(--magenta);
+            font-size: 12px;
+            letter-spacing: 0.02em;
+        }
+
+        .mini-btn {
+            font-family: inherit;
+            font-size: 9px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            background: transparent;
+            color: var(--text-faint);
+            border: 1px solid var(--line);
+            padding: 2px 6px;
+            cursor: pointer;
+            transition: all .12s;
+        }
+
+        .mini-btn:hover {
+            color: var(--green);
+            border-color: var(--green-dim);
+        }
+
+        .expiry-wrap {
+            margin-top: 4px;
+        }
+
+        .expiry-bar {
+            height: 6px;
+            background: var(--bg-3);
+            border: 1px solid var(--line);
+            overflow: hidden;
+        }
+
+        .expiry-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--green-dim), var(--green));
+            box-shadow: var(--glow-green);
+            transition: width .2s linear, background .3s;
+        }
+
+        .expiry-fill.warn {
+            background: linear-gradient(90deg, #7a5a1f, var(--amber));
+            box-shadow: var(--glow-amber);
+        }
+
+        .expiry-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 4px;
+            letter-spacing: 0.04em;
+        }
+
+        /* ── Panel ── */
+        .panel {
+            width: 340px;
+            border-left: 1px solid var(--line);
+            background: var(--bg-1);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .panel .panel-head {
+            padding: 16px 20px 8px;
+            font-size: 10px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-faint);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel section {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel section h3 {
+            margin: 0 0 12px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--cyan);
+        }
+
+        button.btn {
+            font-family: inherit;
+            font-size: 11px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            background: var(--bg-3);
+            color: var(--text);
+            border: 1px solid var(--line-strong);
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: all .12s;
+        }
+
+        button.btn:hover {
+            background: var(--bg-2);
+            border-color: var(--green-dim);
+            color: var(--green);
+        }
+
+        button.btn.primary {
+            background: var(--green-dim);
+            color: var(--bg-0);
+            border-color: var(--green);
+            font-weight: 700;
+        }
+
+        button.btn.primary:hover {
+            background: var(--green);
+            color: var(--bg-0);
+        }
+
+        button.btn.danger:hover {
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        button.btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .field {
+            margin-bottom: 10px;
+        }
+
+        .field label {
+            display: block;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            color: var(--text-faint);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .field input[type="text"], .field input[type="password"] {
+            width: 100%;
+            background: var(--bg-3);
+            border: 1px solid var(--line-strong);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 12px;
+            padding: 7px 9px;
+        }
+
+        .field input[type="range"] {
+            width: 100%;
+            accent-color: var(--green);
+        }
+
+        .field input:focus {
+            outline: 1px solid var(--green);
+        }
+
+        .field-value {
+            color: var(--green);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .toggle input {
+            accent-color: var(--magenta);
+            width: 14px;
+            height: 14px;
+        }
+
+        .toggle span {
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .toggle.danger input {
+            accent-color: var(--red);
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .metric {
+            background: var(--bg-2);
+            border: 1px solid var(--line);
+            padding: 8px 10px;
+        }
+
+        .metric .k {
+            font-size: 9px;
+            letter-spacing: 0.12em;
+            color: var(--text-faint);
+            text-transform: uppercase;
+        }
+
+        .metric .v {
+            font-size: 18px;
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+            margin-top: 2px;
+            color: var(--text);
+        }
+
+        .metric .v.accent-green {
+            color: var(--green);
+        }
+
+        .metric .v.accent-cyan {
+            color: var(--cyan);
+        }
+
+        .metric .v.accent-amber {
+            color: var(--amber);
+        }
+
+        .metric .v.accent-red {
+            color: var(--red);
+        }
+
+        .hint {
+            font-size: 10px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .hint code {
+            color: var(--amber);
+            background: var(--bg-3);
+            padding: 1px 5px;
+            border: 1px solid var(--line);
+        }
+
+        .hint .warn {
+            color: var(--amber);
+        }
+
+        /* ── Event log ── */
+        .log {
+            max-height: 220px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 0;
+            font-size: 11px;
+        }
+
+        .log .row {
+            display: flex;
+            gap: 8px;
+            padding: 3px 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .log .ts {
+            color: var(--text-faint);
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .log .ev {
+            font-weight: 700;
+            flex-shrink: 0;
+            width: 88px;
+        }
+
+        .log .ev.signin {
+            color: var(--green);
+        }
+
+        .log .ev.signout {
+            color: var(--cyan);
+        }
+
+        .log .ev.refresh {
+            color: var(--amber);
+        }
+
+        .log .ev.expire {
+            color: var(--magenta);
+        }
+
+        .log .ev.error {
+            color: var(--red);
+        }
+
+        .log .ev.xtab {
+            color: var(--cyan);
+        }
+
+        .log .msg {
+            color: var(--text-dim);
+        }
+
+        /* ── Boot help overlay ── */
+        #boot-help {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: none;
+            background: var(--bg-0);
+            color: var(--text);
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        #boot-help.show {
+            display: flex;
+        }
+
+        #boot-help .card {
+            max-width: 560px;
+            border: 1px solid var(--line-strong);
+            background: var(--bg-1);
+            padding: 28px 32px;
+        }
+
+        #boot-help h2 {
+            font-family: 'Space Mono', monospace;
+            color: var(--amber);
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+
+        #boot-help p {
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+
+        #boot-help code {
+            display: block;
+            color: var(--green);
+            background: var(--bg-3);
+            padding: 10px 14px;
+            margin: 12px 0;
+            border: 1px solid var(--line);
+        }
+
+        .seq {
+            animation: rise .5s ease both;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="boot-help">
+    <div class="card">
+        <h2>Serve this demo over HTTP</h2>
+        <p>The demo loads <b>lite-auth</b> as an ES module, which browsers block over <code style="display:inline">file://</code>.
+            From the package root run any static server and open the printed URL:</p>
+        <code>npx serve demo</code>
+        <p>Cross-tab logout and shared persistence also require a real origin, so http is needed to see those anyway.
+            Then open the page in <b>two tabs</b> and sign out in one.</p>
+    </div>
+</div>
+
+<div id="app">
+    <header class="top">
+        <div class="brand">
+            <span class="mark">&#9670;</span>
+            <span class="pkg">lite-auth</span>
+            <span class="ver">v1.0.0 · session monitor</span>
+        </div>
+        <div class="hdr-right">
+            <span class="chip" id="chip-tab">tab <b id="tab-id">--</b></span>
+            <span class="chip xtab-on" id="chip-xtab">cross-tab <b>on</b></span>
+            <span class="chip" id="chip-peers">peers <b id="peers-n">0</b></span>
+            <span class="chip" id="chip-leader">follower</span>
+        </div>
+    </header>
+
+    <main>
+        <section class="stage">
+            <canvas id="scope"></canvas>
+
+            <div class="stage-overlay tl seq" style="animation-delay:.05s">
+                <div class="lamp-row">
+                    <span class="lamp off" id="lamp"></span>
+                    <span class="state-label off" id="state-label">SIGNED OUT</span>
+                </div>
+                <div class="state-sub" id="state-sub">no active session</div>
+            </div>
+
+            <div class="stage-overlay tr seq" style="animation-delay:.1s">
+                <div class="readout">
+                    <div class="k">status</div>
+                    <div class="val" id="rd-status">idle</div>
+                </div>
+                <div class="readout" style="margin-top:10px">
+                    <div class="k">error</div>
+                    <div class="val" id="rd-error" style="color:var(--text-faint)">none</div>
+                </div>
+            </div>
+
+            <div class="stage-overlay bl seq" style="animation-delay:.15s">
+                <div class="readout">
+                    <div class="k">user</div>
+                    <div class="val user" id="rd-user">&mdash;</div>
+                </div>
+                <div class="token-line" style="margin-top:8px">
+                    <div>
+                        <div class="k">access token</div>
+                        <div class="token-val" id="rd-token">&mdash;</div>
+                    </div>
+                    <button class="mini-btn" id="btn-reveal" disabled>reveal</button>
+                    <button class="mini-btn" id="btn-copy" disabled>copy</button>
+                </div>
+                <div class="expiry-wrap">
+                    <div class="k">token lifetime</div>
+                    <div class="expiry-bar">
+                        <div class="expiry-fill" id="expiry-fill"></div>
+                    </div>
+                    <div class="expiry-meta">
+                        <span id="expiry-left">&mdash;</span>
+                        <span id="expiry-mark"></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="panel">
+            <div class="panel-head">lite-auth · live controller</div>
+
+            <section>
+                <h3>Authenticate</h3>
+                <div class="field">
+                    <label for="in-user">username</label>
+                    <input type="text" id="in-user" value="ada" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="field">
+                    <label for="in-pass">password</label>
+                    <input type="password" id="in-pass" value="lovelace" autocomplete="off">
+                </div>
+                <label class="toggle danger"><input type="checkbox" id="tg-fail"><span>next sign-in fails (invalid_credentials)</span></label>
+                <div class="field">
+                    <label for="rg-latency">network latency &mdash; <span class="field-value"
+                                                                          id="lbl-latency">300</span> ms</label>
+                    <input type="range" id="rg-latency" min="0" max="2000" step="50" value="300">
+                </div>
+                <div class="btn-row">
+                    <button class="btn primary" id="btn-signin">sign in</button>
+                    <button class="btn" id="btn-signout" disabled>sign out</button>
+                    <button class="btn" id="btn-refresh" disabled>force refresh</button>
+                </div>
+            </section>
+
+            <section>
+                <h3>Session policy (mock backend)</h3>
+                <div class="field">
+                    <label for="rg-life">token lifetime &mdash; <span class="field-value" id="lbl-life">30</span>
+                        s</label>
+                    <input type="range" id="rg-life" min="8" max="120" step="1" value="30">
+                </div>
+                <div class="field">
+                    <label for="rg-thresh">refresh threshold &mdash; <span class="field-value" id="lbl-thresh">10</span>
+                        s before expiry</label>
+                    <input type="range" id="rg-thresh" min="2" max="60" step="1" value="10">
+                </div>
+                <label class="toggle"><input type="checkbox" id="tg-refresh" checked><span>background refresh enabled (leader-only)</span></label>
+                <label class="toggle danger"><input type="checkbox" id="tg-reffail"><span>next refresh fails (forces expiry)</span></label>
+            </section>
+
+            <section>
+                <h3>Telemetry</h3>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="k">sign-ins</div>
+                        <div class="v accent-green" id="m-signin">0</div>
+                    </div>
+                    <div class="metric">
+                        <div class="k">refreshes (this tab)</div>
+                        <div class="v accent-amber" id="m-refresh">0</div>
+                    </div>
+                    <div class="metric">
+                        <div class="k">sign-outs</div>
+                        <div class="v accent-cyan" id="m-signout">0</div>
+                    </div>
+                    <div class="metric">
+                        <div class="k">errors</div>
+                        <div class="v accent-red" id="m-error">0</div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h3>Cross-tab</h3>
+                <p class="hint" id="xtab-hint">
+                    Open this page in <b>two tabs</b>. Sign out (or in) in one and watch the other follow.
+                    Only the <span style="color:var(--amber)">leader</span> tab runs the refresh timer; followers
+                    receive the rotated token over the channel.
+                </p>
+            </section>
+
+            <section>
+                <h3>Event log</h3>
+                <div class="log" id="log"></div>
+            </section>
+        </aside>
+    </main>
+</div>
+
+<!-- Boot watchdog: if the module never initializes (e.g. opened over file://), show help. -->
+<script>
+    window.__BOOTED__ = false;
+    setTimeout(function () {
+        if (!window.__BOOTED__) document.getElementById('boot-help').classList.add('show');
+    }, 1500);
+</script>
+
+<script type="module">
+    import {createAuth} from "./lite-auth.bundle.js";
+
+    window.__BOOTED__ = true;
+    document.getElementById('boot-help').classList.remove('show');
+    document.getElementById('app').classList.add('booted');
+
+    // ─── DOM refs ───
+    const $ = (id) => document.getElementById(id);
+    const els = {
+        lamp: $('lamp'), stateLabel: $('state-label'), stateSub: $('state-sub'),
+        rdStatus: $('rd-status'), rdError: $('rd-error'), rdUser: $('rd-user'), rdToken: $('rd-token'),
+        btnReveal: $('btn-reveal'), btnCopy: $('btn-copy'),
+        expiryFill: $('expiry-fill'), expiryLeft: $('expiry-left'), expiryMark: $('expiry-mark'),
+        inUser: $('in-user'), inPass: $('in-pass'), tgFail: $('tg-fail'),
+        rgLatency: $('rg-latency'), lblLatency: $('lbl-latency'),
+        btnSignin: $('btn-signin'), btnSignout: $('btn-signout'), btnRefresh: $('btn-refresh'),
+        rgLife: $('rg-life'), lblLife: $('lbl-life'), rgThresh: $('rg-thresh'), lblThresh: $('lbl-thresh'),
+        tgRefresh: $('tg-refresh'), tgRefFail: $('tg-reffail'),
+        mSignin: $('m-signin'), mRefresh: $('m-refresh'), mSignout: $('m-signout'), mError: $('m-error'),
+        chipLeader: $('chip-leader'), chipPeers: $('chip-peers'), peersN: $('peers-n'),
+        chipXtab: $('chip-xtab'), chipTab: $('chip-tab'), tabId: $('tab-id'),
+        log: $('log'), xtabHint: $('xtab-hint'),
+    };
+
+    const tabId = Math.random().toString(36).slice(2, 6).toUpperCase();
+    els.tabId.textContent = tabId;
+
+    const TAU = Math.PI * 2;
+
+    // Cross-tab needs a real origin. Flag it if we are on file://.
+    const onFile = location.protocol === 'file:';
+    const xtabSupported = typeof BroadcastChannel !== 'undefined' && !onFile;
+    if (!xtabSupported) {
+        els.chipXtab.className = 'chip';
+        els.chipXtab.innerHTML = 'cross-tab <b>off</b>';
+        els.xtabHint.innerHTML = '<span class="warn">Cross-tab is disabled on file://.</span> Serve over http (<code>npx serve demo</code>) and open two tabs to demonstrate it.';
+    }
+
+    // ─── metrics ───
+    const counts = {signin: 0, refresh: 0, signout: 0, error: 0};
+
+    function bump(k) {
+        counts[k]++;
+        els['m' + k.charAt(0).toUpperCase() + k.slice(1)].textContent = counts[k];
+    }
+
+    function log(ev, cls, msg) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const ts = new Date().toLocaleTimeString('en-GB', {hour12: false});
+        row.innerHTML = `<span class="ts">${ts}</span><span class="ev ${cls}">${ev}</span><span class="msg"></span>`;
+        row.querySelector('.msg').textContent = msg || '';
+        els.log.appendChild(row);
+        while (els.log.children.length > 60) els.log.removeChild(els.log.firstChild);
+    }
+
+    // ─── fake JWT (so the token looks real and decodeJwtExp would work) ───
+    const b64url = (o) => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    function fakeJwt(sub, name, expMs) {
+        const head = b64url({alg: 'HS256', typ: 'JWT'});
+        const body = b64url({sub, name, iat: Math.floor(Date.now() / 1000), exp: Math.floor(expMs / 1000)});
+        const sig = Math.random().toString(36).slice(2, 14);
+        return `${head}.${body}.${sig}`;
+    }
+
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // ─── mock adapter (reads the sliders/toggles live) ───
+    const adapter = {
+        async signIn(creds, signal) {
+            await delay(Number(els.rgLatency.value));
+            if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+            if (els.tgFail.checked) {
+                els.tgFail.checked = false;
+                throw new Error('invalid username or password');
+            }
+            const exp = Date.now() + Number(els.rgLife.value) * 1000;
+            return {
+                user: {id: creds.username || 'user', name: creds.username || 'user'},
+                accessToken: fakeJwt(creds.username, creds.username, exp),
+                refreshToken: 'rt_' + Math.random().toString(36).slice(2, 10),
+                expiresAt: exp
+            };
+        },
+        async refresh(record, signal) {
+            await delay(Math.min(400, Number(els.rgLatency.value)));
+            if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+            if (els.tgRefFail.checked) {
+                els.tgRefFail.checked = false;
+                throw new Error('refresh token rejected');
+            }
+            const exp = Date.now() + Number(els.rgLife.value) * 1000;
+            return {
+                user: record.user,
+                accessToken: fakeJwt(record.user.id, record.user.name, exp),
+                refreshToken: 'rt_' + Math.random().toString(36).slice(2, 10),
+                expiresAt: exp
+            };
+        },
+        async signOut() {
+            await delay(Math.min(200, Number(els.rgLatency.value)));
+        },
+    };
+
+    // ─── build / rebuild auth (rebuild when refresh policy changes) ───
+    let auth = null;
+    let unsub = [];
+
+    function teardown() {
+        unsub.forEach((fn) => {
+            try {
+                fn();
+            } catch {
+            }
+        });
+
+        unsub = [];
+        if (auth) {
+            try {
+                auth.dispose();
+            } catch {
+            }
+            auth = null;
+        }
+    }
+
+    function build() {
+        teardown();
+
+        auth = createAuth({
+            adapter,
+            storage: 'localStorage',
+            storageKey: 'lite-auth-demo',
+            channelName: 'lite-auth-demo',
+            crossTab: xtabSupported,
+            refresh: {enabled: els.tgRefresh.checked, threshold: Number(els.rgThresh.value)},
+            channelOptions: {heartbeatMs: 1500},
+            onSignIn: (u) => {
+                bump('signin');
+                log('onSignIn', 'signin', u.name);
+            },
+            onSignOut: () => {
+                bump('signout');
+                log('onSignOut', 'signout', 'session cleared');
+            },
+            onSessionExpire: () => log('onSessionExpire', 'expire', 'session expired'),
+            onTokenRefresh: (rec) => {
+                bump('refresh');
+                log('onTokenRefresh', 'refresh', rec.accessToken.slice(0, 14) + '...');
+            },
+            onError: (e) => {
+                bump('error');
+                log('onError', 'error', e.code + ': ' + e.message);
+            },
+        });
+
+        // reactive projections -> DOM
+        unsub.push(auth.isAuthenticated.subscribe(renderAuthState));
+        unsub.push(auth.session.subscribe(renderUser));
+        unsub.push(auth.token.subscribe(renderToken));
+        unsub.push(auth.status.subscribe(renderStatus));
+        unsub.push(auth.error.subscribe(renderError));
+
+        // leadership chip (only when the bus has attached)
+        auth.ready.then(() => {
+            if (!auth || !auth.__bus) {
+            } // bus is internal; we infer leadership via a poll below
+        });
+    }
+
+    // ─── renderers ───
+    let revealed = false;
+    let currentToken = null;
+
+    function renderAuthState(on) {
+        els.lamp.className = 'lamp' + (on ? ' on' : '');
+        els.stateLabel.className = 'state-label' + (on ? ' on' : ' off');
+        els.stateLabel.textContent = on ? 'AUTHENTICATED' : 'SIGNED OUT';
+        els.stateSub.textContent = on ? 'session active' : 'no active session';
+        els.btnSignout.disabled = !on;
+        els.btnRefresh.disabled = !on;
+        els.btnReveal.disabled = !on;
+        els.btnCopy.disabled = !on;
+        if (!on) {
+            els.expiryFill.style.width = '0%';
+            els.expiryLeft.textContent = '\u2014';
+            els.expiryMark.textContent = '';
+        }
+    }
+
+    function renderUser(u) {
+        els.rdUser.textContent = u ? (u.name || u.id) : '\u2014';
+    }
+
+    function renderToken(t) {
+        currentToken = t;
+        if (!t) {
+            els.rdToken.textContent = '\u2014';
+            return;
+        }
+        els.rdToken.textContent = revealed ? t : (t.slice(0, 10) + '\u2026' + t.slice(-4));
+    }
+
+    function renderStatus(s) {
+        els.rdStatus.textContent = s;
+        els.rdStatus.style.color = s === 'idle' ? 'var(--text)' : 'var(--amber)';
+        if (s !== 'idle') {
+            els.lamp.className = 'lamp busy';
+            els.stateLabel.className = 'state-label busy';
+            els.stateLabel.textContent = s.toUpperCase();
+        } else if (auth) renderAuthState(auth.isAuthenticated.peek());
+    }
+
+    function renderError(e) {
+        els.rdError.textContent = e ? (e.code) : 'none';
+        els.rdError.style.color = e ? 'var(--red)' : 'var(--text-faint)';
+        if (e) {
+            els.lamp.classList.add('err');
+            setTimeout(() => els.lamp.classList.remove('err'), 600);
+        }
+    }
+
+    els.btnReveal.onclick = () => {
+        revealed = !revealed;
+        els.btnReveal.textContent = revealed ? 'hide' : 'reveal';
+        renderToken(currentToken);
+    };
+    els.btnCopy.onclick = async () => {
+        if (currentToken) {
+            try {
+                await navigator.clipboard.writeText(currentToken);
+                els.btnCopy.textContent = 'copied';
+                setTimeout(() => els.btnCopy.textContent = 'copy', 1200);
+            } catch {
+            }
+        }
+    };
+
+    // ─── actions ───
+    els.btnSignin.onclick = async () => {
+        try {
+            await auth.signIn({username: els.inUser.value, password: els.inPass.value});
+        } catch (e) { /* surfaced via error signal + log */
+        }
+    };
+    els.btnSignout.onclick = () => auth.signOut();
+    els.btnRefresh.onclick = async () => {
+        try {
+            await auth.refresh();
+        } catch (e) {
+        }
+    };
+
+    // ─── slider labels + policy rebuild ───
+    els.rgLatency.oninput = () => els.lblLatency.textContent = els.rgLatency.value;
+    els.rgLife.oninput = () => els.lblLife.textContent = els.rgLife.value;
+    els.rgThresh.oninput = () => {
+        els.lblThresh.textContent = els.rgThresh.value;
+        build();
+    };
+    els.tgRefresh.onchange = () => build();
+
+    // ─── leadership poll (bus is internal; infer via a heartbeat-driven check) ───
+    // We expose leadership by reading localStorage presence is overkill; instead we
+    // reflect the chip from a lightweight BroadcastChannel listener of our own.
+    let isLeader = false;
+    let peerSet = new Set();
+    if (xtabSupported) {
+        const presence = new BroadcastChannel('lite-auth-demo-presence');
+        const beat = () => presence.postMessage({id: tabId, t: Date.now()});
+        const seen = new Map();
+        presence.onmessage = (ev) => {
+            const {id, t} = ev.data || {};
+            if (!id || id === tabId) return;
+            seen.set(id, t || Date.now());
+        };
+        setInterval(() => {
+            beat();
+            const cut = Date.now() - 4000;
+            for (const [id, t] of seen) if (t < cut) seen.delete(id);
+            peerSet = new Set(seen.keys());
+            els.peersN.textContent = peerSet.size;
+            // lowest id is leader (mirrors lite-channel's rule, for display only)
+            const ids = [tabId, ...peerSet].sort();
+            const leadNow = ids[0] === tabId;
+            if (leadNow !== isLeader) {
+                isLeader = leadNow;
+                els.chipLeader.textContent = isLeader ? 'leader' : 'follower';
+                els.chipLeader.className = 'chip' + (isLeader ? ' leader-on' : '');
+            }
+        }, 1000);
+        beat();
+    } else {
+        els.chipLeader.textContent = 'leader';
+        els.chipLeader.className = 'chip leader-on';
+    }
+
+    // ─── oscilloscope: token-lifetime sweep ───
+    const cv = $('scope');
+    const ctx = cv.getContext('2d');
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    // Precomputed colour strings (one set per state) so the frame loop never
+    // builds an rgba(...) string on the hot path. Built once.
+    const colorSet = (rgb) => ({ stroke: 'rgba(' + rgb + ',0.9)', glow: 'rgba(' + rgb + ',0.8)', dot: 'rgba(' + rgb + ',1)' });
+    const CSET = { idle: colorSet('85,89,96'), live: colorSet('95,227,159'), warn: colorSet('245,185,66') };
+
+    // Dash arrays reused across frames (mutated in place on dpr change, never
+    // re-allocated per frame).
+    const DASH = [4 * dpr, 4 * dpr];
+    const EMPTY_DASH = [];
+
+    function resize() {
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        cv.width = cv.clientWidth * dpr;
+        cv.height = cv.clientHeight * dpr;
+        DASH[0] = DASH[1] = 4 * dpr;
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Phosphor trail as a fixed-capacity ring buffer: [x, y] per slot. No
+    // per-frame object allocation and no array re-indexing from shift().
+    const TRAIL_CAP = 90;
+    const trail = new Float32Array(TRAIL_CAP * 2);
+    let trailHead = 0, trailCount = 0;
+    const pushTrail = (x, y) => {
+        const o = trailHead * 2;
+        trail[o] = x; trail[o + 1] = y;
+        trailHead = (trailHead + 1) % TRAIL_CAP;
+        if (trailCount < TRAIL_CAP) trailCount++;
+    };
+
+    // DOM write-guards: cache last-written values, skip redundant writes.
+    let lastWidthT = -1, lastWarn = -1, lastLeftT = -1, lastRefresh = -1, lastThrV = -1;
+
+    function frame() {
+        const w = cv.width, h = cv.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
+        const step = 40 * dpr;
+        for (let x = 0; x < w; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+        }
+        for (let y = 0; y < h; y += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+        }
+
+        const authed = auth && auth.isAuthenticated.peek();
+        const exp = authed ? auth.expiresAt.peek() : null;
+        const life = Number(els.rgLife.value) * 1000;
+        const thr = Number(els.rgThresh.value) * 1000;
+        let frac = 0, leftMs = 0;
+        if (authed && exp) {
+            leftMs = Math.max(0, exp - Date.now());
+            frac = Math.max(0, Math.min(1, leftMs / life));
+        }
+
+        // expiry bar (DOM) + meta -- guarded so the DOM is touched only on change
+        const warn = authed && leftMs <= thr;
+        const widthT = Math.round(frac * 1000);                 // tenths of a percent
+        if (widthT !== lastWidthT) { els.expiryFill.style.width = (widthT / 10).toFixed(1) + '%'; lastWidthT = widthT; }
+        const warnI = warn ? 1 : 0;
+        if (warnI !== lastWarn) {
+            els.expiryFill.className = warn ? 'expiry-fill warn' : 'expiry-fill';
+            els.expiryMark.style.color = warn ? 'var(--amber)' : 'var(--text-dim)';
+            lastWarn = warnI;
+        }
+        if (authed) {
+            const leftT = Math.round(leftMs / 100);             // tenths of a second
+            if (leftT !== lastLeftT) { els.expiryLeft.textContent = (leftT / 10).toFixed(1) + 's left'; lastLeftT = leftT; }
+            const refreshI = els.tgRefresh.checked ? 1 : 0;
+            if (refreshI !== lastRefresh || thr !== lastThrV) {
+                els.expiryMark.textContent = refreshI ? ('auto-refresh @ ' + (thr / 1000) + 's') : 'refresh off';
+                lastRefresh = refreshI; lastThrV = thr;
+            }
+        }
+
+        // sweep trace: amplitude follows remaining fraction; phosphor trail
+        const midY = h / 2;
+        const baseAmp = h * 0.30;
+        const amp = baseAmp * (authed ? (0.25 + 0.75 * frac) : 0.05);
+        const tnow = Date.now() / 1000;
+        const headX = w * (authed ? (1 - frac) : 0.0); // sweep advances toward expiry
+        const cs = !authed ? CSET.idle : warn ? CSET.warn : CSET.live;
+
+        pushTrail(headX, midY + Math.sin(tnow * 6) * amp);
+
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.beginPath();
+        const start = (trailHead - trailCount + TRAIL_CAP) % TRAIL_CAP;
+        for (let k = 0; k < trailCount; k++) {
+            const o = ((start + k) % TRAIL_CAP) * 2;
+            if (k === 0) ctx.moveTo(trail[o], trail[o + 1]); else ctx.lineTo(trail[o], trail[o + 1]);
+        }
+        ctx.strokeStyle = cs.stroke;
+        ctx.shadowBlur = 14 * dpr;
+        ctx.shadowColor = cs.glow;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // threshold marker line
+        if (authed) {
+            const markX = w * (1 - thr / life);
+            ctx.strokeStyle = 'rgba(245,185,66,0.35)';
+            ctx.setLineDash(DASH);
+            ctx.beginPath();
+            ctx.moveTo(markX, 0);
+            ctx.lineTo(markX, h);
+            ctx.stroke();
+            ctx.setLineDash(EMPTY_DASH);
+        }
+
+        // head dot
+        if (authed && trailCount > 0) {
+            const o = ((trailHead - 1 + TRAIL_CAP) % TRAIL_CAP) * 2;
+            ctx.beginPath();
+            ctx.arc(trail[o], trail[o + 1], 3 * dpr, 0, TAU);
+            ctx.fillStyle = cs.dot;
+            ctx.shadowBlur = 16 * dpr;
+            ctx.shadowColor = cs.dot;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+
+    // ─── go ───
+    build();
+    log('boot', 'xtab', 'session monitor ready · tab ' + tabId);
+</script>
+</body>
+</html>
